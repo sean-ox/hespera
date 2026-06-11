@@ -1,0 +1,225 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bugbounty}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-bugbounty}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bugbounty"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bounty_network
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bounty_network
+
+  orchestrator:
+    build: .
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - MAX_CONCURRENT_RECON=${MAX_CONCURRENT_RECON:-2}
+      - RECON_TIMEOUT_SECONDS=${RECON_TIMEOUT_SECONDS:-1800}
+      - SCHEDULE_INTERVAL_MINUTES=${SCHEDULE_INTERVAL_MINUTES:-360}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGS=${JSON_LOGS:-true}
+      - URO_BIN=uro
+      - UNFURL_BIN=unfurl
+      - QSREPLACE_BIN=qsreplace
+      - DALFOX_BIN=dalfox
+      - SUBZY_BIN=subzy
+      - JSLUICE_BIN=jsluice
+      - TRUFFLEHOG_BIN=trufflehog
+    volumes:
+      - ./bash:/app/bash:ro
+      - ./scope.txt:/app/scope.txt:ro
+      - bounty_output:/app/output
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - bounty_network
+    command: ["python", "-m", "python.main"]
+
+  recon_worker:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - MAX_CONCURRENT_RECON=${MAX_CONCURRENT_RECON:-2}
+      - RECON_TIMEOUT_SECONDS=${RECON_TIMEOUT_SECONDS:-1800}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGS=${JSON_LOGS:-true}
+      - WORKER_TYPE=recon
+      - SUBFINDER_BIN=subfinder
+      - ASSETFINDER_BIN=assetfinder
+      - HTTPX_BIN=httpx
+      - GAU_BIN=gau
+      - WAYBACKURLS_BIN=waybackurls
+      - KATANA_BIN=katana
+    volumes:
+      - ./bash:/app/bash:ro
+      - ./scope.txt:/app/scope.txt:ro
+      - bounty_output:/app/output
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - bounty_network
+    command: ["python", "-m", "python.workers.recon_worker"]
+
+  nuclei_worker:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGS=${JSON_LOGS:-true}
+      - WORKER_TYPE=nuclei
+      - NUCLEI_BIN=nuclei
+    volumes:
+      - ./bash:/app/bash:ro
+      - bounty_output:/app/output
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - bounty_network
+    command: ["python", "-m", "python.workers.nuclei_worker"]
+
+  filter_worker:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGS=${JSON_LOGS:-true}
+      - WORKER_TYPE=filter
+      - URO_BIN=uro
+      - UNFURL_BIN=unfurl
+    volumes:
+      - ./bash:/app/bash:ro
+      - bounty_output:/app/output
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - bounty_network
+    command: ["python", "-m", "python.workers.filter_worker"]
+
+  xss_worker:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGS=${JSON_LOGS:-true}
+      - DALFOX_BIN=dalfox
+    volumes:
+      - ./bash:/app/bash:ro
+      - bounty_output:/app/output
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - bounty_network
+    command: ["python", "-m", "python.workers.xss_worker"]
+
+  takeover_worker:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGS=${JSON_LOGS:-true}
+      - SUBZY_BIN=subzy
+    volumes:
+      - ./bash:/app/bash:ro
+      - bounty_output:/app/output
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - bounty_network
+    command: ["python", "-m", "python.workers.takeover_worker"]
+
+  js_worker:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGS=${JSON_LOGS:-true}
+      - JSLUICE_BIN=jsluice
+      - TRUFFLEHOG_BIN=trufflehog
+    volumes:
+      - ./bash:/app/bash:ro
+      - bounty_output:/app/output
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - bounty_network
+    command: ["python", "-m", "python.workers.js_worker"]
+
+  notify_worker:
+    build: .
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGS=${JSON_LOGS:-true}
+      - WORKER_TYPE=notify
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - bounty_network
+    command: ["python", "-m", "python.workers.notify_worker"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  bounty_output:
+
+networks:
+  bounty_network:
+    driver: bridge
