@@ -19,13 +19,14 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
     go install -v github.com/tomnomnom/assetfinder@latest && \
     go install -v github.com/tomnomnom/waybackurls@latest && \
-    go install -v github.com/lc/gau/v2/cmd/gau@latest\
+    go install -v github.com/lc/gau/v2/cmd/gau@latest && \
     go install -v github.com/tomnomnom/unfurl@latest && \
     go install -v github.com/tomnomnom/qsreplace@latest && \
     go install -v github.com/hahwul/dalfox/v2@latest && \
     go install -v github.com/punk-security/subzy@latest && \
-    go install -v github.com/trufflesecurity/trufflehog/v3@latest && \
-    pip install uro jsluice
+    go install -v github.com/trufflesecurity/trufflehog/v3@latest
+
+RUN pip install uro jsluice
 
 # Final stage
 FROM python:3.11-slim-bookworm

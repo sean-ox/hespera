@@ -5,15 +5,14 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bugbounty}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-bugbounty}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/migrations:/docker-entrypoint-initdb.d
-    ports:
-      - "5432:5432"
+    # Port 5432 is NOT exposed to the host. Internal Docker network only.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bugbounty"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bugbounty}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,13 +21,12 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
+    # Port 6379 is NOT exposed to the host. Internal Docker network only.
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,7 +39,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - MAX_CONCURRENT_RECON=${MAX_CONCURRENT_RECON:-2}
       - RECON_TIMEOUT_SECONDS=${RECON_TIMEOUT_SECONDS:-1800}
       - SCHEDULE_INTERVAL_MINUTES=${SCHEDULE_INTERVAL_MINUTES:-360}
@@ -74,7 +72,7 @@ services:
     build: .
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - MAX_CONCURRENT_RECON=${MAX_CONCURRENT_RECON:-2}
       - RECON_TIMEOUT_SECONDS=${RECON_TIMEOUT_SECONDS:-1800}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -102,7 +100,7 @@ services:
     build: .
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - JSON_LOGS=${JSON_LOGS:-true}
       - WORKER_TYPE=nuclei
@@ -122,7 +120,7 @@ services:
     build: .
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - JSON_LOGS=${JSON_LOGS:-true}
       - WORKER_TYPE=filter
@@ -143,7 +141,7 @@ services:
     build: .
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - JSON_LOGS=${JSON_LOGS:-true}
       - DALFOX_BIN=dalfox
@@ -162,7 +160,7 @@ services:
     build: .
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - JSON_LOGS=${JSON_LOGS:-true}
       - SUBZY_BIN=subzy
@@ -181,7 +179,7 @@ services:
     build: .
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - JSON_LOGS=${JSON_LOGS:-true}
       - JSLUICE_BIN=jsluice
@@ -203,7 +201,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - JSON_LOGS=${JSON_LOGS:-true}
       - WORKER_TYPE=notify

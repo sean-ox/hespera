@@ -1,4 +1,5 @@
 """XSS Worker - runs dalfox to detect XSS vulnerabilities."""
+import asyncio
 import json
 import tempfile
 from typing import List
@@ -150,5 +151,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

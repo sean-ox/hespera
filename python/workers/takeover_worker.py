@@ -1,7 +1,9 @@
 """Subdomain Takeover Worker - uses subzy to detect dangling CNAMEs."""
 import asyncio
+import os
 import tempfile
 import json
+from typing import List
 
 from python.workers.base import BaseWorker
 from python.redis_client import redis_client
@@ -67,7 +69,6 @@ class TakeoverWorker(BaseWorker):
                             "subdomains": [f["finding_data"].get("subdomain") for f in findings]
                         })
         finally:
-            import os
             os.unlink(input_file)
     
     def _parse_subzy_output(self, output: str, scan_id: int, domain: str) -> List[dict]:
@@ -122,5 +123,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
