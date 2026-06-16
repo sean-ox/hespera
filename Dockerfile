@@ -59,6 +59,14 @@ RUN mkdir -p /app/output /app/logs
 # Set permissions
 RUN chmod +x ./scripts/*.sh ./bash/wrappers/*.sh ./bash/lib/*.sh
 
+# Create a non-root user and group, then hand over ownership
+RUN groupadd -r appuser && \
+    useradd -r -g appuser -d /app -s /sbin/nologin -c "App user" appuser && \
+    chown -R appuser:appuser /app
+
+# Drop root — all subsequent RUN, CMD, ENTRYPOINT run as appuser
+USER appuser
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD ./scripts/healthcheck.sh

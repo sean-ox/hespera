@@ -32,7 +32,35 @@ async def run_command_safe(
     Returns:
         ProcessResult with stdout, stderr, returncode, and timeout flag
     """
-    process_env = os.environ.copy()
+    # Build a minimal environment for the subprocess.
+    # Never pass the full process environment because it contains secrets
+    # (TELEGRAM_BOT_TOKEN, DATABASE_URL, POSTGRES_PASSWORD, REDIS_URL, etc.)
+    # that external tools (subfinder, nuclei, dalfox, …) have no need for.
+    # If any of those tools log or leak their environment the secrets are gone.
+    _SAFE_ENV_KEYS = {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "TERM",
+        "GOPATH",
+        "GOROOT",
+    }
+    process_env = {
+        key: os.environ[key]
+        for key in _SAFE_ENV_KEYS
+        if key in os.environ
+    }
+    # Ensure PATH always has a usable value so tools can be found
+    if "PATH" not in process_env:
+        process_env["PATH"] = "/usr/local/bin:/usr/bin:/bin"
+    # Caller-supplied overrides are merged last and always win
     if env:
         process_env.update(env)
     

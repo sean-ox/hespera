@@ -65,12 +65,25 @@ class RedisClient:
         await self._client.setex(key, ttl, value)
     
     async def acquire_lock(self, lock_name: str, timeout: int = 30) -> bool:
-        """Acquire distributed lock."""
-        return await self._client.setnx(f"lock:{lock_name}", "locked") and \
-               await self._client.expire(f"lock:{lock_name}", timeout)
-    
+        """Acquire a distributed lock atomically.
+
+        Uses SET NX EX — a single atomic Redis command — so there is no
+        window between SETNX and EXPIRE where a crash would leave an
+        un-expiring lock that deadlocks all future callers.
+
+        Returns True if the lock was acquired, False if it was already held.
+        """
+        result = await self._client.set(
+            f"lock:{lock_name}",
+            "locked",
+            ex=timeout,   # expire in `timeout` seconds
+            nx=True,      # only set if key does NOT already exist
+        )
+        # redis-py returns the string "OK" (or True) on success, None on failure
+        return result is not None
+
     async def release_lock(self, lock_name: str) -> None:
-        """Release distributed lock."""
+        """Release the distributed lock."""
         await self._client.delete(f"lock:{lock_name}")
 
 
