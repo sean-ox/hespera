@@ -1,8 +1,32 @@
 version: '3.8'
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared security defaults applied to every service via YAML anchors.
+# Each service that needs different limits overrides the relevant key.
+# ─────────────────────────────────────────────────────────────────────────────
+x-security-defaults: &security-defaults
+  security_opt:
+    - no-new-privileges:true   # prevent setuid/setgid privilege escalation
+  cap_drop:
+    - ALL                      # drop every Linux capability by default
+
+x-resource-defaults: &resource-defaults
+  deploy:
+    resources:
+      limits:
+        cpus: '0.50'
+        memory: 512M
+      reservations:
+        cpus: '0.10'
+        memory: 128M
+
 services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
   postgres:
     image: postgres:15-alpine
+    <<: *security-defaults
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bugbounty}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -10,7 +34,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/migrations:/docker-entrypoint-initdb.d
-    # Port 5432 is NOT exposed to the host. Internal Docker network only.
+    # No ports: exposed to host — internal Docker network only
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bugbounty}"]
       interval: 10s
@@ -18,13 +42,22 @@ services:
       retries: 5
     networks:
       - bounty_network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   redis:
     image: redis:7-alpine
+    <<: *security-defaults
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
-    # Port 6379 is NOT exposed to the host. Internal Docker network only.
+    # No ports: exposed to host — internal Docker network only
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -32,12 +65,24 @@ services:
       retries: 5
     networks:
       - bounty_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 64M
+
+  # ── Orchestrator ────────────────────────────────────────────────────────────
 
   orchestrator:
     build: .
+    <<: *security-defaults
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      - API_SECRET_KEY=${API_SECRET_KEY}
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - MAX_CONCURRENT_RECON=${MAX_CONCURRENT_RECON:-2}
@@ -67,9 +112,20 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.main"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.10'
+          memory: 128M
+
+  # ── Workers ─────────────────────────────────────────────────────────────────
 
   recon_worker:
     build: .
+    <<: *security-defaults
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -95,9 +151,19 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.recon_worker"]
+    # Recon tools are network-heavy but not CPU-heavy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   nuclei_worker:
     build: .
+    <<: *security-defaults
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -115,9 +181,19 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.nuclei_worker"]
+    # Nuclei can be CPU-intensive during large template runs
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   filter_worker:
     build: .
+    <<: *security-defaults
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -136,9 +212,11 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.filter_worker"]
+    <<: *resource-defaults
 
   xss_worker:
     build: .
+    <<: *security-defaults
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -155,9 +233,11 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.xss_worker"]
+    <<: *resource-defaults
 
   takeover_worker:
     build: .
+    <<: *security-defaults
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -174,9 +254,11 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.takeover_worker"]
+    <<: *resource-defaults
 
   js_worker:
     build: .
+    <<: *security-defaults
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -194,9 +276,19 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.js_worker"]
+    # JS worker downloads files — needs slightly more memory
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 768M
+        reservations:
+          cpus: '0.10'
+          memory: 128M
 
   notify_worker:
     build: .
+    <<: *security-defaults
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
@@ -212,11 +304,24 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.notify_worker"]
+    # Notify worker is lightweight — just Telegram HTTP calls
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
 
 volumes:
   postgres_data:
   redis_data:
   bounty_output:
+
+# ── Networks ─────────────────────────────────────────────────────────────────
 
 networks:
   bounty_network:
