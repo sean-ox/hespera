@@ -1,6 +1,7 @@
 """Scheduler for periodic recon tasks."""
 import asyncio
 from datetime import datetime
+from urllib.parse import urlparse
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -17,61 +18,89 @@ settings = load_settings()
 logger = get_logger(__name__)
 
 
+def _build_redis_jobstore() -> RedisJobStore:
+    """
+    Build a RedisJobStore from settings.redis_url.
+
+    Parses the URL (redis://:password@host:port/db) so that the
+    jobstore always uses the same credentials and host as the rest
+    of the application — no more hardcoded host/port/no-password.
+
+    APScheduler stores scheduled job metadata in Redis db=1
+    (separate from application queues on db=0).
+    """
+    parsed = urlparse(settings.redis_url)
+
+    host     = parsed.hostname or "redis"
+    port     = parsed.port     or 6379
+    password = parsed.password or None   # None if not in URL
+
+    logger.info(
+        "Configuring APScheduler Redis jobstore",
+        host=host,
+        port=port,
+        auth=bool(password),
+    )
+
+    return RedisJobStore(
+        host=host,
+        port=port,
+        password=password,          # ← was always None before this fix
+        db=1,                       # keep scheduler data on db=1
+        jobs_key="apscheduler.jobs",
+        run_times_key="apscheduler.run_times",
+    )
+
+
 class ReconScheduler:
     """Schedules periodic recon for all active targets."""
-    
+
     def __init__(self):
         self.scheduler = None
         self._running = False
-    
-    async def start(self):
-        """Start the scheduler."""
+
+    async def start(self) -> None:
+        """Start the APScheduler with a Redis-backed jobstore."""
         await db_manager.initialize()
         await redis_client.initialize()
-        
-        # Use Redis for job persistence
-        jobstores = {
-            'default': RedisJobStore(
-                host='redis',
-                port=6379,
-                db=1,
-                jobs_key='apscheduler.jobs',
-                run_times_key='apscheduler.run_times'
-            )
-        }
-        
+
+        jobstores = {"default": _build_redis_jobstore()}
+
         self.scheduler = AsyncIOScheduler(jobstores=jobstores)
-        
-        # Schedule periodic recon for all targets
+
         self.scheduler.add_job(
             self._run_scheduled_recon,
             IntervalTrigger(minutes=settings.schedule_interval_minutes),
             id="global_recon_schedule",
-            replace_existing=True
+            replace_existing=True,
         )
-        
+
         self.scheduler.start()
         self._running = True
-        logger.info("Scheduler started", interval_minutes=settings.schedule_interval_minutes)
-    
-    async def _run_scheduled_recon(self):
+        logger.info(
+            "Scheduler started",
+            interval_minutes=settings.schedule_interval_minutes,
+        )
+
+    async def _run_scheduled_recon(self) -> None:
         """Fetch all active targets and enqueue recon jobs."""
         async with db_manager.session() as session:
             from sqlalchemy import select
+
             stmt = select(Target).where(Target.status == TargetStatus.ACTIVE)
             result = await session.execute(stmt)
             targets = result.scalars().all()
-        
+
         logger.info("Running scheduled recon", target_count=len(targets))
-        
+
         for target in targets:
             await enqueue_recon(
                 target.domain,
                 target.scan_mode.value,
-                triggered_by=None  # Scheduled, not user-triggered
+                triggered_by=None,  # Scheduled, not user-triggered
             )
-    
-    async def stop(self):
+
+    async def stop(self) -> None:
         """Stop the scheduler gracefully."""
         if self.scheduler:
             self.scheduler.shutdown(wait=True)
@@ -85,7 +114,6 @@ async def main():
     scheduler = ReconScheduler()
     try:
         await scheduler.start()
-        # Keep running
         while True:
             await asyncio.sleep(10)
     except KeyboardInterrupt:

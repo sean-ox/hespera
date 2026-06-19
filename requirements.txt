@@ -1,3 +1,16 @@
+# ============================================================
+# requirements.txt — ALL versions pinned
+# Hash verification: run the command below once to generate
+# hashes, then commit the output as requirements.hash.txt
+# and change the Dockerfile to use:
+#   pip install --require-hashes -r requirements.hash.txt
+#
+# To regenerate hashes:
+#   pip install pip-tools
+#   pip-compile --generate-hashes requirements.in \
+#               --output-file requirements.hash.txt
+# ============================================================
+
 # Core
 python-telegram-bot==20.7
 fastapi==0.109.0
@@ -16,7 +29,11 @@ rq==1.15.1
 
 # Async & Scheduling
 apscheduler==3.10.4
-asyncio==3.4.3
+# NOTE: asyncio==3.4.3 REMOVED — asyncio is a Python 3 built-in.
+#       That PyPI package is a Python 2 stub and must not be installed.
+
+# HTTP client (used by js_worker for JS file downloads)
+aiohttp==3.9.3
 
 # Utilities
 python-dotenv==1.0.0

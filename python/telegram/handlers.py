@@ -195,6 +195,7 @@ async def recon_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+@require_admin
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /status command - system health."""
     # Get target count
@@ -221,6 +222,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+@require_admin
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /report command - show latest findings."""
     if len(context.args) != 1:
