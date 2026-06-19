@@ -193,7 +193,7 @@ services:
 
   filter_worker:
     build: .
-    <<: *security-defaults
+    <<: [*security-defaults, *resource-defaults]
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -212,11 +212,10 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.filter_worker"]
-    <<: *resource-defaults
 
   xss_worker:
     build: .
-    <<: *security-defaults
+    <<: [*security-defaults, *resource-defaults]
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -233,11 +232,10 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.xss_worker"]
-    <<: *resource-defaults
 
   takeover_worker:
     build: .
-    <<: *security-defaults
+    <<: [*security-defaults, *resource-defaults]
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -254,7 +252,6 @@ services:
     networks:
       - bounty_network
     command: ["python", "-m", "python.workers.takeover_worker"]
-    <<: *resource-defaults
 
   js_worker:
     build: .
