@@ -6,12 +6,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go tools (subfinder, httpx, etc.)
-ENV GO_VERSION=1.21.5
+ENV GO_VERSION=1.25.11
 RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -xz -C /usr/local
-ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH=/go
+ENV PATH="/usr/local/go/bin:${GOPATH}/bin:${PATH}"
+ENV GOPROXY=https://proxy.golang.org,direct
 
 # Pin every Go tool to a specific verified version.
 # To upgrade: change the version tag, rebuild, test, commit.
@@ -27,22 +30,38 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.6.6 
     go install -v github.com/tomnomnom/unfurl@v0.4.3 && \
     go install -v github.com/tomnomnom/qsreplace@v0.0.3 && \
     go install -v github.com/hahwul/dalfox/v2@v2.9.2 && \
-    go install -v github.com/punk-security/subzy@v1.0.0 && \
-    go install -v github.com/trufflesecurity/trufflehog/v3@v3.82.6
+    go install -v github.com/PentestPad/subzy@latest && \
+    go install -v github.com/BishopFox/jsluice/cmd/jsluice@latest
 
-RUN pip install uro==4.4.0 jsluice==0.1.0
+# Build trufflehog manual (karena ada replace directive di go.mod-nya)
+RUN git clone https://github.com/trufflesecurity/trufflehog.git /tmp/trufflehog && \
+    cd /tmp/trufflehog && \
+    git checkout v3.95.6 && \
+    go build -o ${GOPATH}/bin/trufflehog . && \
+    rm -rf /tmp/trufflehog
 
+
+# ─────────────────────────────────────────────────────────────
 # Final stage
+# ─────────────────────────────────────────────────────────────
 FROM python:3.11-slim-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Go binaries from builder
-COPY --from=builder /root/go/bin /usr/local/bin
+# ============ PERBAIKAN 1 ============
+# Copy semua binary Go dari /go/bin (bukan /root/go/bin)
+COPY --from=builder /go/bin /usr/local/bin
+# =====================================
+
 COPY --from=builder /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
+
+# ============ PERBAIKAN 2 ============
+# Install uro (Python) langsung di sini
+RUN pip install uro
+# =====================================
 
 WORKDIR /app
 
@@ -57,7 +76,7 @@ COPY python/ ./python/
 COPY bash/ ./bash/
 COPY sql/ ./sql/
 COPY scripts/ ./scripts/
-COPY .env.example ./.env
+#COPY .env.example ./.env
 
 # Create directories
 RUN mkdir -p /app/output /app/logs

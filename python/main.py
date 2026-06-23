@@ -4,7 +4,7 @@ import os
 import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi import Depends, FastAPI, HTTPException, Security, status, Request
 from fastapi.security.api_key import APIKeyHeader
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
@@ -12,6 +12,7 @@ from starlette.responses import Response
 from python.database import db_manager
 from python.redis_client import redis_client
 from python.telegram.bot import create_bot_app
+from python.telegram.bot import send_message
 from python.scheduler import ReconScheduler
 from python.utils.logging_config import setup_logging, get_logger
 
@@ -27,16 +28,7 @@ _API_SECRET_KEY: str = os.environ.get("API_SECRET_KEY", "")
 
 
 def _verify_api_key(api_key: str = Security(_API_KEY_HEADER)) -> str:
-    """
-    Dependency that validates the X-API-Key header.
-
-    The key is compared with secrets.compare_digest() to prevent
-    timing-based side-channel attacks.
-    Raises HTTP 403 if the key is missing or incorrect.
-    """
     if not _API_SECRET_KEY:
-        # Fail-closed: if the operator never set API_SECRET_KEY, block all
-        # access rather than allow unauthenticated requests.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="API authentication is not configured on this server.",
@@ -55,27 +47,24 @@ def _verify_api_key(api_key: str = Security(_API_KEY_HEADER)) -> str:
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager."""
     logger.info("Starting Bug Bounty Platform v2.0")
 
-    # Initialize connections
     await db_manager.initialize()
+    await db_manager.create_tables()
     await redis_client.initialize()
 
-    # Start Telegram bot
+    # Start Telegram bot (polling)
     bot_app = create_bot_app()
     await bot_app.initialize()
     await bot_app.start()
     await bot_app.updater.start_polling()
-    logger.info("Telegram bot started")
+    logger.info("Telegram bot started (polling mode)")
 
-    # Start scheduler
     scheduler = ReconScheduler()
     await scheduler.start()
 
     yield
 
-    # Cleanup
     await scheduler.stop()
     await bot_app.updater.stop()
     await bot_app.stop()
@@ -91,24 +80,19 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Bug Bounty Orchestrator",
     lifespan=lifespan,
-    # Hide schema endpoints in production
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
 )
 
 
-# Public — used by Docker / load-balancer health probes (no auth required)
 @app.get("/health")
 async def health_check():
-    """Liveness probe. No authentication required."""
     return {"status": "healthy", "version": "2.0.0"}
 
 
-# Protected — requires X-API-Key header
 @app.get("/metrics", dependencies=[Depends(_verify_api_key)])
 async def metrics():
-    """Prometheus metrics endpoint. Requires X-API-Key."""
     from prometheus_client import REGISTRY
     return Response(
         content=generate_latest(REGISTRY),
@@ -118,7 +102,6 @@ async def metrics():
 
 @app.get("/queue/length", dependencies=[Depends(_verify_api_key)])
 async def queue_length():
-    """Get queue lengths for monitoring. Requires X-API-Key."""
     recon_len = await redis_client.get_queue_length("queue:recon")
     nuclei_len = await redis_client.get_queue_length("queue:nuclei")
     notify_len = await redis_client.get_queue_length("queue:notify")
@@ -127,6 +110,32 @@ async def queue_length():
         "nuclei_queue": nuclei_len,
         "notify_queue": notify_len,
     }
+
+
+# ===================== WEBHOOK ENDPOINT (OPSIONAL) =====================
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    """
+    Endpoint untuk menerima update dari Telegram (webhook).
+    Jika kamu ingin menggunakan webhook, setel URL webhook di Telegram.
+    """
+    data = await request.json()
+    
+    # Abaikan jika bukan pesan
+    if "message" not in data:
+        return {"ok": True}
+    
+    msg = data["message"]
+    chat_id = msg["chat"]["id"]
+    text = msg.get("text", "").strip()
+    
+    # Proses perintah menggunakan handler yang sama
+    from python.telegram.handlers import process_telegram_command
+    response = process_telegram_command(chat_id, text)
+    if response:
+        await send_message(chat_id, response)
+    
+    return {"ok": True}
 
 
 if __name__ == "__main__":

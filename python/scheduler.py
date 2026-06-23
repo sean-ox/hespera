@@ -52,6 +52,39 @@ def _build_redis_jobstore() -> RedisJobStore:
     )
 
 
+# ===================== FUNGSI JOB TINGKAT MODUL =====================
+async def _scheduled_recon_job() -> None:
+    """
+    Job yang dijadwalkan untuk menjalankan recon pada semua target aktif.
+    Didefinisikan di tingkat modul agar tidak mereferensi scheduler,
+    sehingga bisa diserialisasi oleh RedisJobStore.
+    """
+    from python.database import db_manager
+    from python.models.target import Target, TargetStatus
+    from python.workers.recon_worker import enqueue_recon
+    from python.utils.logging_config import get_logger
+    from python.settings import load_settings
+
+    logger = get_logger(__name__)
+    settings = load_settings()
+
+    async with db_manager.session() as session:
+        from sqlalchemy import select
+        stmt = select(Target).where(Target.status == TargetStatus.ACTIVE)
+        result = await session.execute(stmt)
+        targets = result.scalars().all()
+
+    logger.info("Running scheduled recon", target_count=len(targets))
+
+    for target in targets:
+        await enqueue_recon(
+            target.domain,
+            target.scan_mode.value,
+            triggered_by=None,  # Scheduled, not user-triggered
+        )
+
+
+# ===================== SCHEDULER KELAS =====================
 class ReconScheduler:
     """Schedules periodic recon for all active targets."""
 
@@ -68,8 +101,9 @@ class ReconScheduler:
 
         self.scheduler = AsyncIOScheduler(jobstores=jobstores)
 
+        # 🔥 Perbaikan: gunakan fungsi tingkat modul, bukan metode instance
         self.scheduler.add_job(
-            self._run_scheduled_recon,
+            _scheduled_recon_job,                 # ← fungsi statis/modul
             IntervalTrigger(minutes=settings.schedule_interval_minutes),
             id="global_recon_schedule",
             replace_existing=True,
@@ -82,24 +116,6 @@ class ReconScheduler:
             interval_minutes=settings.schedule_interval_minutes,
         )
 
-    async def _run_scheduled_recon(self) -> None:
-        """Fetch all active targets and enqueue recon jobs."""
-        async with db_manager.session() as session:
-            from sqlalchemy import select
-
-            stmt = select(Target).where(Target.status == TargetStatus.ACTIVE)
-            result = await session.execute(stmt)
-            targets = result.scalars().all()
-
-        logger.info("Running scheduled recon", target_count=len(targets))
-
-        for target in targets:
-            await enqueue_recon(
-                target.domain,
-                target.scan_mode.value,
-                triggered_by=None,  # Scheduled, not user-triggered
-            )
-
     async def stop(self) -> None:
         """Stop the scheduler gracefully."""
         if self.scheduler:
@@ -110,6 +126,7 @@ class ReconScheduler:
         logger.info("Scheduler stopped")
 
 
+# ===================== MAIN (UNTUK TESTING) =====================
 async def main():
     scheduler = ReconScheduler()
     try:

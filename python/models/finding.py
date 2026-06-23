@@ -24,16 +24,31 @@ class Severity(str, enum.Enum):
 
 class Finding(Base):
     __tablename__ = "findings"
-    
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    scan_id: Mapped[int] = mapped_column(ForeignKey("scans.id", ondelete="CASCADE"), index=True)
-    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id", ondelete="CASCADE"), index=True)
-    finding_type: Mapped[FindingType] = mapped_column(SQLEnum(FindingType))
-    finding_data: Mapped[dict] = mapped_column(JSON, nullable=False)  # Structured data
-    severity: Mapped[Severity] = mapped_column(SQLEnum(Severity), default=Severity.INFO)
-    is_new: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    # ====== Field yang diisi otomatis ======
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, init=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default_factory=datetime.utcnow, index=True, init=False
+    )
+
+    # ====== Field wajib ======
+    scan_id: Mapped[int] = mapped_column(
+        ForeignKey("scans.id", ondelete="CASCADE"), index=True
+    )
+    target_id: Mapped[int] = mapped_column(
+        ForeignKey("targets.id", ondelete="CASCADE"), index=True
+    )
+    finding_type: Mapped[FindingType] = mapped_column(
+        SQLEnum(FindingType, native_enum=False)
+    )
+    finding_data: Mapped[dict] = mapped_column(JSON, nullable=False)
     dedup_hash: Mapped[str] = mapped_column(String(64), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    
+
+    # ====== Field dengan default ======
+    severity: Mapped[Severity] = mapped_column(
+        SQLEnum(Severity, native_enum=False), default=Severity.INFO
+    )
+    is_new: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
     def __repr__(self) -> str:
         return f"<Finding(id={self.id}, type={self.finding_type}, severity={self.severity})>"

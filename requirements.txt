@@ -11,6 +11,9 @@
 #               --output-file requirements.hash.txt
 # ============================================================
 
+# Request
+requests>=2.31.0
+
 # Core
 python-telegram-bot==20.7
 fastapi==0.109.0

@@ -144,7 +144,6 @@ services:
       - KATANA_BIN=katana
       - API_SECRET_KEY=${API_SECRET_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
     volumes:
       - ./bash:/app/bash:ro
       - ./scope.txt:/app/scope.txt:ro
@@ -178,7 +177,6 @@ services:
       - NUCLEI_BIN=nuclei
       - API_SECRET_KEY=${API_SECRET_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
     volumes:
       - ./bash:/app/bash:ro
       - bounty_output:/app/output
@@ -212,7 +210,6 @@ services:
       - UNFURL_BIN=unfurl
       - API_SECRET_KEY=${API_SECRET_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
     volumes:
       - ./bash:/app/bash:ro
       - bounty_output:/app/output
@@ -235,7 +232,6 @@ services:
       - DALFOX_BIN=dalfox
       - API_SECRET_KEY=${API_SECRET_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
     volumes:
       - ./bash:/app/bash:ro
       - bounty_output:/app/output
@@ -258,7 +254,6 @@ services:
       - SUBZY_BIN=subzy
       - API_SECRET_KEY=${API_SECRET_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
     volumes:
       - ./bash:/app/bash:ro
       - bounty_output:/app/output
@@ -282,7 +277,6 @@ services:
       - TRUFFLEHOG_BIN=trufflehog
       - API_SECRET_KEY=${API_SECRET_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
     volumes:
       - ./bash:/app/bash:ro
       - bounty_output:/app/output
@@ -315,9 +309,7 @@ services:
       - WORKER_TYPE=notify
       - API_SECRET_KEY=${API_SECRET_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
-    volumes:
-      - ./scope.txt:/app/scope.txt:ro
+    
     depends_on:
       - postgres
       - redis

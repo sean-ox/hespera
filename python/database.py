@@ -44,6 +44,16 @@ class DatabaseManager:
             expire_on_commit=False,
         )
     
+    async def create_tables(self) -> None:
+        """
+        Create all tables and enum types (if any) using SQLAlchemy metadata.
+        This ensures that the database schema matches the models.
+        """
+        if not self._engine:
+            raise RuntimeError("Database not initialized")
+        async with self._engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    
     async def close(self) -> None:
         """Close all connections."""
         if self._engine:

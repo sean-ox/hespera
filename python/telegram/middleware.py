@@ -16,14 +16,19 @@ logger = get_logger(__name__)
 # Simple in-memory rate limiter (use Redis for production)
 _rate_limit_cache: Dict[str, list] = {}
 
+# ===================== ADMIN CHECK =====================
+def is_admin(chat_id: int) -> bool:
+    """Check if a given chat_id is the configured admin."""
+    return chat_id == settings.admin_chat_id
 
+# ===================== DECORATORS =====================
 def require_admin(func: Callable) -> Callable:
     """Decorator to restrict command to admin only."""
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Any:
         if not update.effective_chat:
             return
-        if update.effective_chat.id != settings.admin_chat_id:
+        if not is_admin(update.effective_chat.id):
             logger.warning(
                 "Unauthorized access attempt",
                 chat_id=update.effective_chat.id,
@@ -68,8 +73,9 @@ def rate_limit(limit_per_minute: int = 10):
                 await redis_client.cache_set(
                     key, ','.join(str(t) for t in timestamps), ttl=60
                 )
-            except Exception:
+            except Exception as e:
                 # Fallback to in-memory rate limiting
+                logger.debug("Redis rate limit fallback", error=str(e))
                 key = f"{chat_id}:{func.__name__}"
                 if key not in _rate_limit_cache:
                     _rate_limit_cache[key] = []
